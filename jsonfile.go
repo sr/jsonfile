@@ -48,16 +48,48 @@ func New[Data any](path string) (*JSONFile[Data], error) {
 //		db, err = jsonfile.New[Data](path)
 //	}
 func Load[Data any](path string) (*JSONFile[Data], error) {
+	p, err := load[Data](path)
+	if err != nil {
+		return nil, fmt.Errorf("jsonfile.Load: %w", err)
+	}
+	return p, nil
+}
+
+func load[Data any](path string) (*JSONFile[Data], error) {
 	p := &JSONFile[Data]{path: path, data: new(Data)}
 	var err error
 	p.bytes, err = os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("jsonfile.Load: %w", err)
+		return nil, err
 	}
 	if err := json.Unmarshal(p.bytes, p.data); err != nil {
-		return nil, fmt.Errorf("jsonfile.Load: %w", err)
+		return nil, err
 	}
 	return p, nil
+}
+
+// Reload loads the data from the file on disk. If fn is provided it is called
+// with the new data; if fn returns an error the reload is aborted and the error
+// is returned, leaving the data unchanged.
+func (p *JSONFile[Data]) Reload(fn func(data *Data) error) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	reloaded, err := load[Data](p.path)
+	if err != nil {
+		return fmt.Errorf("jsonfile.Reload: %w", err)
+	}
+	if fn != nil {
+		reloaded.Read(func(data *Data) {
+			err = fn(data)
+		})
+		if err != nil {
+			return fmt.Errorf("jsonfile.Reload: %w", err)
+		}
+	}
+	p.bytes = reloaded.bytes
+	p.data = reloaded.data
+	return nil
 }
 
 // Read calls fn with the current copy of the data.

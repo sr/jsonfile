@@ -66,6 +66,37 @@ func TestBasic(t *testing.T) {
 	})
 }
 
+func TestReload(t *testing.T) {
+	t.Parallel()
+	type DB struct{ Val int }
+
+	path := filepath.Join(t.TempDir(), "testreload.json")
+	db, err := New[DB](path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, db, func(db *DB) { db.Val = 3 })
+	if err := os.WriteFile(path, []byte(`{"val": 1}`), 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.Reload(nil); err != nil {
+		t.Fatal(err)
+	}
+
+	db.Read(func(db *DB) {
+		if db.Val != 1 {
+			t.Fatalf("Val = %d after reload, want 1", db.Val)
+		}
+	})
+
+	abort := errors.New("abort")
+	err = db.Reload(func(db *DB) error { return abort })
+	if !errors.Is(err, abort) {
+		t.Fatalf("Reload want error %v, got %v", abort, nil)
+	}
+}
+
 func TestRollbackOnProgramError(t *testing.T) {
 	t.Parallel()
 	type DB struct{ Val int }
